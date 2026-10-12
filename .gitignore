@@ -1,1 +1,5 @@
 .cache/
+.mcp.json
+.agents/
+.agentsroom/
+.claude/
