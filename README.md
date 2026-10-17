@@ -7,6 +7,7 @@ It supports:
 - **Traditional Markdown**: headings, emphasis, lists, blockquotes, code, links, images, reference links, inline HTML and HTML blocks.
 - **GitHub Flavored Markdown**: fenced code blocks, tables, ~~strikethrough~~, bare URL autolinks and task lists. You can also turn on newline-as-`<br>`.
 - **Markdown Extra**: definition lists, footnotes, abbreviations, `{#id .class}` attributes, and fenced code with attributes.
+- **Heading anchors**: every heading gets a GitHub-style id (`## Getting Started` → `#getting-started`, repeated headings get `-1`, `-2` added), so links like `[Install](#install)` or `[API](docs/#auth)` work. Hovering a heading shows a `#` permalink. A `{#custom-id}` on the heading replaces the generated id.
 
 ## Install
 
@@ -37,6 +38,7 @@ const SITE_NAME = 'SimpleMd4PHP';       // appended to page titles
 const SITE_LANG = 'en';
 const CACHE_DIR = __DIR__ . '/.cache';  // '' disables the HTML cache
 const MD_BREAKS = false;                // true: every newline is a <br>
+const MD_ANCHORS = true;                // heading ids + "#" permalinks
 ```
 
 To change the look, edit the `<style>` block in `render_page()`. The page `<title>` comes from the first `# Heading`.
