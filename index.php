@@ -18,6 +18,7 @@ const SITE_NAME = 'SimpleMd4PHP';           // appended to every page title
 const SITE_LANG = 'en';                     // <html lang="…">
 const CACHE_DIR = __DIR__ . '/.cache';      // rendered-HTML cache; '' disables it
 const MD_BREAKS = false;                    // GFM option: every newline becomes <br>
+const MD_ANCHORS = true;                    // headings get ids (#my-heading) and a "#" permalink
 
 /* ------------------------------------------------------------------------- */
 /*  Markdown parser                                                          */
@@ -27,6 +28,9 @@ final class Markdown
 {
     /** Treat single newlines inside paragraphs as hard line breaks (GFM option). */
     public $breaks = false;
+
+    /** Give every heading a GitHub-style id ("My Heading" -> #my-heading) and a "#" permalink. */
+    public $anchors = false;
 
     private const TAGS = 'address|article|aside|audio|blockquote|body|canvas|center|dd|details|dialog|div|dl|dt|fieldset|figcaption|figure|footer|form|h[1-6]|header|hr|html|iframe|legend|li|link|main|menu|nav|noscript|ol|p|pre|script|section|style|summary|svg|table|tbody|td|template|textarea|tfoot|th|thead|tr|ul|video';
     private const LI    = '/^( {0,3})([*+-]|(\d{1,9})[.)])([ \t]+|$)/';
@@ -51,13 +55,13 @@ final class Markdown
         . '|(?<![\w\/"\'=@])(?<www>(?:https?:\/\/|www\.)(?:[^\s<()]|\([^\s<()]*\))+(?<![?!.,:;*_~\'"]))' // bare URL (GFM)
         . '/s';
 
-    private $refs = [], $notes = [], $used = [], $abbr = [], $tok = [];
+    private $refs = [], $notes = [], $used = [], $abbr = [], $tok = [], $ids = [];
     private $abbrRe = '';
     private $inLink = false;
 
     public function parse(string $text): string
     {
-        $this->refs = $this->notes = $this->used = $this->abbr = $this->tok = [];
+        $this->refs = $this->notes = $this->used = $this->abbr = $this->tok = $this->ids = [];
         $this->abbrRe = '';
 
         if (strncmp($text, "\xEF\xBB\xBF", 3) === 0) $text = substr($text, 3);
@@ -228,10 +232,29 @@ final class Markdown
 
     private function heading(int $lvl, string $t, bool $atx = false): string
     {
-        $attr = '';
-        if (preg_match('/^(.*?)[ \t]*\{([#.][^}]*)\}$/', $t, $m)) { $t = $m[1]; $attr = $this->attrs($m[2]); }
+        $spec = '';
+        if (preg_match('/^(.*?)[ \t]*\{([#.][^}]*)\}$/', $t, $m)) { $t = $m[1]; $spec = $m[2]; }
         if ($atx) $t = preg_replace('/(?:^|[ \t]+)#+$/', '', $t);
-        return "<h$lvl$attr>" . $this->inline(trim($t)) . "</h$lvl>";
+        $h = $this->inline(trim($t));
+        if (!$this->anchors) return "<h$lvl" . $this->attrs($spec) . ">$h</h$lvl>";
+
+        if (preg_match('/(?:^|\s)#(\S+)/', $spec, $m)) $this->ids[$m[1]] = true;   // explicit {#id} wins
+        else $spec .= ' #' . $this->slug($h);
+        $attr = $this->attrs($spec);
+        preg_match('/ id="([^"]*)"/', $attr, $m);
+        return "<h$lvl$attr>" . '<a class="anchor" href="#' . $m[1] . '" aria-hidden="true" tabindex="-1"></a>' . "$h</h$lvl>";
+    }
+
+    /** GitHub-style unique heading id: lowercase, punctuation dropped, spaces become "-". */
+    private function slug(string $html): string
+    {
+        $s = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $s = function_exists('mb_strtolower') ? mb_strtolower($s, 'UTF-8') : strtolower($s);
+        $s = str_replace(' ', '-', preg_replace('/[^\p{L}\p{M}\p{N}_\- ]+/u', '', trim($s)));
+        if ($s === '') $s = 'section';
+        for ($id = $s, $k = 1; isset($this->ids[$id]); $k++) $id = "$s-$k";
+        $this->ids[$id] = true;
+        return $id;
     }
 
     private function listBlock(array $L, int &$i): string
@@ -552,6 +575,7 @@ function render_page(string $file): string
 {
     $md = new Markdown();
     $md->breaks = MD_BREAKS;
+    $md->anchors = MD_ANCHORS;
     $body = $md->parse((string)file_get_contents($file));
 
     $title = preg_match('~<h1[^>]*>(.*?)</h1>~s', $body, $m) ? trim(html_entity_decode(strip_tags($m[1]), ENT_QUOTES, 'UTF-8')) : '';
@@ -574,6 +598,10 @@ main{max-width:48rem;margin:0 auto;padding:2rem 1rem 4rem;overflow-wrap:break-wo
 a{color:var(--link)}
 h1,h2,h3,h4,h5,h6{line-height:1.25;margin:1.5em 0 .6em}
 h1,h2{padding-bottom:.3em;border-bottom:1px solid var(--line)}
+[id]{scroll-margin-top:1rem}
+.anchor{float:left;width:1em;margin-left:-1em;color:var(--muted);text-decoration:none;opacity:0}
+.anchor::before{content:"#"}
+:hover>.anchor,.anchor:focus,:target>.anchor{opacity:1}
 img,video{max-width:100%;height:auto}
 code,pre{font:.875em/1.45 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;background:var(--code);border-radius:6px}
 code{padding:.15em .35em}
