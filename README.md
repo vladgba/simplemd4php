@@ -5,7 +5,7 @@ A Markdown site engine for PHP in one file. Put `.md` files next to `index.php` 
 It supports:
 
 - **Traditional Markdown**: headings, emphasis, lists, blockquotes, code, links, images, reference links, inline HTML and HTML blocks.
-- **GitHub Flavored Markdown**: fenced code blocks, tables, ~~strikethrough~~, bare URL autolinks and task lists. You can also turn on newline-as-`<br>`.
+- **GitHub Flavored Markdown**: fenced code blocks, tables, ~~strikethrough~~ (`~one~` or `~~two~~` tildes), bare URL and email autolinks, task lists, alerts (`> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`) and color previews for inline code like `` `#0969da` ``, `` `rgb(9, 105, 218)` `` or `` `hsl(212, 92%, 45%)` ``. You can also turn on newline-as-`<br>`.
 - **Markdown Extra**: definition lists, footnotes, abbreviations, `{#id .class}` attributes, and fenced code with attributes.
 - **Heading anchors**: every heading gets a GitHub-style id (`## Getting Started` → `#getting-started`, repeated headings get `-1`, `-2` added), so links like `[Install](#install)` or `[API](docs/#auth)` work. Hovering a heading shows a `#` permalink. A `{#custom-id}` on the heading replaces the generated id.
 

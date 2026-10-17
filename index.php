@@ -38,6 +38,10 @@ final class Markdown
     private const FENCE = '/^( {0,3})(`{3,}(?=[^`]*$)|~{3,})[ \t]*(.*?)[ \t]*$/';
     private const DD    = '/^ {0,3}:[ \t]+/';
     private const SEP   = '/^ *\|? *:?-+:? *(?:\| *:?-+:? *)*\|? *$/';
+    private const ALPHA = '(?:\s*,\s*(?:0|1|0?\.\d+|\d{1,3}%))?\s*\)';
+    private const COLOR = '/^(?:#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})'                    // `#rgb`, `#rrggbb`
+        . '|rgba?\(\s*\d{1,3}%?\s*,\s*\d{1,3}%?\s*,\s*\d{1,3}%?' . self::ALPHA                  // `rgb(9, 105, 218)`
+        . '|hsla?\(\s*\d{1,3}(?:deg)?\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%' . self::ALPHA . ')$/i';    // `hsl(212, 92%, 45%)`
 
     // All inline syntax in one left-to-right pass; matched spans become placeholders.
     private const INLINE = '/'
@@ -52,6 +56,7 @@ final class Markdown
         .   '(?:\s+(?<q>["\'])(?<title>.*?)\k<q>|\s+\((?<title2>[^)]*)\))?[ \t]*\)' //   "title")
         .   '|\s?\[(?<ref>[^\]]*)\])?'                                             //   | [ref]
         .   '(?:\{(?<attr>[#.][^}]*)\})?'                                           //   {#id .class}
+        . '|(?<![\w.+\-\/@:])(?<bmail>[\w.+\-]+@[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)+)(?![\w@\-]|\.[A-Za-z0-9])' // bare email (GFM)
         . '|(?<![\w\/"\'=@])(?<www>(?:https?:\/\/|www\.)(?:[^\s<()]|\([^\s<()]*\))+(?<![?!.,:;*_~\'"]))' // bare URL (GFM)
         . '/s';
 
@@ -187,7 +192,15 @@ final class Markdown
                     elseif (trim($L[$i]) !== '' && trim(end($q)) !== '' && !$this->startsBlock($L[$i])) $q[] = $L[$i];
                     else break;
                 }
-                $out[] = "<blockquote>\n" . $this->blocks($q) . "\n</blockquote>";
+                if ($q && preg_match('/^[ \t]*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*$/i', $q[0], $a)) {
+                    $type = strtolower($a[1]);                                         // > [!NOTE] alert (GFM)
+                    $body = $this->blocks(array_slice($q, 1));
+                    $out[] = '<div class="markdown-alert markdown-alert-' . $type . "\">\n"
+                        . '<p class="markdown-alert-title">' . ucfirst($type) . "</p>\n"
+                        . ($body === '' ? '' : "$body\n") . '</div>';
+                } else {
+                    $out[] = "<blockquote>\n" . $this->blocks($q) . "\n</blockquote>";
+                }
             } elseif (preg_match(self::LI, $l)) {                                       // - list / 1. list
                 $out[] = $this->listBlock($L, $i);
             } elseif (preg_match('/^ {0,3}<(?:(!--)|(\/?)(' . self::TAGS . ')(?=[\s\/>]|$))/i', $l, $m)) {
@@ -452,7 +465,7 @@ final class Markdown
         return preg_replace_callback('/\x1A(\d+)\x1A/', function ($m) { return $this->tok[(int)$m[1]]; }, $s);
     }
 
-    /** *em*, **strong**, ***both***, _em_, __strong__ (not inside words), ~~del~~ */
+    /** *em*, **strong**, ***both***, _em_, __strong__ (not inside words), ~del~ / ~~del~~ */
     private function emph(string $s): string
     {
         $out = '';
@@ -469,8 +482,11 @@ final class Markdown
                 continue;
             }
             $double = ($s[$i + 1] ?? '') === $c;
-            if ($c === '~') $re = '/\G~~(?=\S)(.+?)(?<=\S)~~/s';
-            elseif ($c === '*') $re = $double ? '/\G\*\*(?=\S)((?>[^*]|\*[^*]*\*)+?)(?<=\S)\*\*/s'
+            if ($c === '~') {                                                       // ~ or ~~, closed by the same count
+                $run = strspn($s, '~', $i);
+                $re = $run > 2 ? '/(?!)/' : ($double ? '/\G~~(?=[^\s~])(.+?)(?<=[^\s~])~~(?!~)/s'
+                                                     : '/\G~(?=[^\s~])(.+?)(?<=[^\s~])~(?!~)/s');
+            } elseif ($c === '*') $re = $double ? '/\G\*\*(?=\S)((?>[^*]|\*[^*]*\*)+?)(?<=\S)\*\*/s'
                                               : '/\G\*(?=\S)((?>[^*]|\*\*[^*]+?\*\*)+?)(?<=\S)\*(?!\*[^*])/s';
             else $re = $double ? '/\G__(?=\S)((?>[^_]|_[^_]*_)+?)(?<=\S)__(?![\p{L}\p{N}])/su'
                                : '/\G_(?=\S)((?>[^_]|__[^_]*__)+?)(?<=\S)_(?![\p{L}\p{N}_])/su';
@@ -478,6 +494,9 @@ final class Markdown
                 $tag = $c === '~' ? 'del' : ($double ? 'strong' : 'em');
                 $out .= "<$tag>" . $this->emph($m[1]) . "</$tag>";
                 $i += strlen($m[0]);
+            } elseif ($c === '~') {                                                  // unmatched run stays literal
+                $out .= str_repeat('~', $run);
+                $i += $run;
             } else {
                 $out .= $c;
                 $i++;
@@ -496,12 +515,17 @@ final class Markdown
     private function token(array $m): string
     {
         if (isset($m['esc'])) return $this->keep($m['esc'] === "\n" ? "<br />\n" : $this->esc($m['esc']));
-        if (isset($m['code'])) return $this->keep('<code>' . $this->esc(trim($m['code'])) . '</code>');
-        if ($this->inLink && (isset($m['auto']) || isset($m['www']) || (isset($m['txt']) && $m['img'] !== '!'))) {
+        if (isset($m['code'])) {
+            $c = trim($m['code']);
+            return $this->keep('<code>' . $this->esc($c) . (preg_match(self::COLOR, $c)                  // `#0969da` swatch (GFM)
+                ? '<span class="color-swatch" style="background-color:' . $this->attr($c) . '"></span>' : '') . '</code>');
+        }
+        if ($this->inLink && (isset($m['auto']) || isset($m['www']) || isset($m['bmail']) || (isset($m['txt']) && $m['img'] !== '!'))) {
             return $this->keep($this->esc($m[0]));                       // no links inside links
         }
         if (isset($m['auto'])) return $this->keep('<a href="' . $this->attr($m['auto']) . '">' . $this->esc($m['auto']) . '</a>');
         if (isset($m['mail'])) return $this->keep('<a href="mailto:' . $this->attr($m['mail']) . '">' . $this->esc($m['mail']) . '</a>');
+        if (isset($m['bmail'])) return $this->keep('<a href="mailto:' . $this->attr($m['bmail']) . '">' . $this->esc($m['bmail']) . '</a>');
         if (isset($m['html'])) return $this->keep($m['html']);
         if (isset($m['www'])) {
             $u = $m['www'];
@@ -614,6 +638,14 @@ hr{height:0;margin:2em 0;border:0;border-top:1px solid var(--line)}
 dt{font-weight:600}
 dd{margin:0 0 .5em 1.5em}
 .footnotes{font-size:.875em;color:var(--muted)}
+.color-swatch{display:inline-block;width:.75em;height:.75em;margin-left:.4em;border:1px solid var(--line);border-radius:50%;vertical-align:-.05em}
+.markdown-alert{margin:0 0 1em;padding:.5em 1em;border-left:.25em solid var(--alert)}
+.markdown-alert>:last-child{margin-bottom:0}
+.markdown-alert-title{margin:0 0 .25em;font-weight:600;color:var(--alert)}
+.markdown-alert-note{--alert:#0969da}.markdown-alert-tip{--alert:#1a7f37}.markdown-alert-important{--alert:#8250df}
+.markdown-alert-warning{--alert:#9a6700}.markdown-alert-caution{--alert:#d1242f}
+@media (prefers-color-scheme:dark){.markdown-alert-note{--alert:#4493f8}.markdown-alert-tip{--alert:#3fb950}
+.markdown-alert-important{--alert:#ab7df8}.markdown-alert-warning{--alert:#d29922}.markdown-alert-caution{--alert:#f85149}}
 </style>
 </head>
 <body>
