@@ -25,4 +25,4 @@ jobs:
 
       - name: Lint PHP files
         run: |
-          find . -name "*.php" -not -path "*/.*" -exec php -l {} +
+          find . -name "*.php" -not -path "*/.*" -print0 | xargs -0 -r -n1 php -l
