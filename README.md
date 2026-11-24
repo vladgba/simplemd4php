@@ -19,9 +19,15 @@ It supports:
 | `/`         | `index.md` (or `README.md`)           |
 | `/about`    | `about.md`                            |
 | `/docs/`    | `docs/index.md` (or `docs/README.md`) |
+| `/LICENSE`  | `LICENSE` (plain text, see below)     |
+| `/app/privacy` | redirects to `/app/docs/privacy` if only `app/docs/privacy.md` exists |
 | not found   | `404.md` (optional)                   |
 
 Images and other static files are served directly. Write relative links like `[About](about)` or `![photo](img/photo.jpg)`.
+
+License files are shown as pages too, in any folder: `LICENSE`, `LICENCE`, `COPYING`, `UNLICENSE` and `NOTICE`, also with a suffix or `.txt` (`LICENSE-MIT`, `LICENSE.txt`). Their text is not parsed as Markdown; it is shown exactly as written. If `LICENSE.md` exists it is used instead. Link to them like `[License](LICENSE)`.
+
+If a page or license file is not in the requested folder, the engine looks in that folder's `docs/` subfolder and redirects there: `/app/privacy` goes to `/app/docs/privacy`, `/app/LICENSE` to `/app/docs/LICENSE`, and `/app/` to `/app/docs/` when the folder has no `index.md` or `README.md`. It is a redirect, so relative links and images inside `docs/` keep working.
 
 ## Speed
 

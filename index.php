@@ -8,6 +8,8 @@
  *   /            -> index.md        (or README.md)
  *   /about       -> about.md
  *   /docs/       -> docs/index.md   (or docs/README.md)
+ *   /LICENSE     -> LICENSE         (plain text: LICENSE, COPYING, NOTICE …)
+ *   /app/privacy -> redirects to /app/docs/privacy when only app/docs/privacy.md exists
  *   not found    -> 404.md          (if present)
  *
  * Needs PHP 7.4+ and the .htaccess next to this file (Apache + mod_rewrite).
@@ -19,6 +21,8 @@ const SITE_LANG = 'en';                     // <html lang="…">
 const CACHE_DIR = __DIR__ . '/.cache';      // rendered-HTML cache; '' disables it
 const MD_BREAKS = false;                    // GFM option: every newline becomes <br>
 const MD_ANCHORS = true;                    // headings get ids (#my-heading) and a "#" permalink
+// Plain-text files shown as pages: LICENSE, LICENCE, COPYING, UNLICENSE, NOTICE (+ "-MIT" and/or ".txt")
+const TEXT_PAGES = '~^(?:licen[sc]e|copying|unlicense|notice)(?:-[\w.+]+)?(?:\.txt)?$~i';
 
 /* ------------------------------------------------------------------------- */
 /*  Markdown parser                                                          */
@@ -597,10 +601,18 @@ final class Markdown
 
 function render_page(string $file): string
 {
-    $md = new Markdown();
-    $md->breaks = MD_BREAKS;
-    $md->anchors = MD_ANCHORS;
-    $body = $md->parse((string)file_get_contents($file));
+    $text = (string)file_get_contents($file);
+    if (strcasecmp(substr($file, -3), '.md') !== 0) {           // LICENSE & co: plain text, kept as written
+        if (strncmp($text, "\xEF\xBB\xBF", 3) === 0) $text = substr($text, 3);
+        $text = trim(str_replace(["\r\n", "\r"], "\n", $text), "\n");
+        $body = '<h1>' . htmlspecialchars(basename($file), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . "</h1>\n"
+            . '<pre class="plain">' . htmlspecialchars($text, ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8') . "</pre>\n";
+    } else {
+        $md = new Markdown();
+        $md->breaks = MD_BREAKS;
+        $md->anchors = MD_ANCHORS;
+        $body = $md->parse($text);
+    }
 
     $title = preg_match('~<h1[^>]*>(.*?)</h1>~s', $body, $m) ? trim(html_entity_decode(strip_tags($m[1]), ENT_QUOTES, 'UTF-8')) : '';
     $title = htmlspecialchars($title === '' || $title === SITE_NAME ? SITE_NAME : $title . ' · ' . SITE_NAME, ENT_QUOTES, 'UTF-8');
@@ -631,6 +643,7 @@ code,pre{font:.875em/1.45 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono"
 code{padding:.15em .35em}
 pre{padding:1em;overflow:auto}
 pre code{padding:0;font-size:1em;background:none}
+pre.plain{white-space:pre-wrap;overflow-wrap:anywhere}
 blockquote{margin:0 0 1em;padding:0 1em;color:var(--muted);border-left:.25em solid var(--line)}
 table{display:block;max-width:100%;overflow:auto;border-collapse:collapse;margin:0 0 1em}
 th,td{padding:.4em .8em;border:1px solid var(--line)}
@@ -673,6 +686,7 @@ if (!preg_match('~(^|/)\.|\\\\|\0~', $path)) {                  // no dotfiles, 
     $p = preg_replace('~\.md$~i', '', $path);
     $dir = $p === '' ? __DIR__ : __DIR__ . '/' . $p;
     $try = $p === '' ? [] : [$dir . '.md' => false];
+    if ($p !== '' && preg_match(TEXT_PAGES, basename($path))) $try[$dir] = false;   // LICENSE.md wins over LICENSE
     $try += [$dir . '/index.md' => true, $dir . '/README.md' => true];
     foreach ($try as $f => $d) {
         if (is_file($f)) { $file = $f; $isDir = $d; break; }
@@ -682,6 +696,22 @@ if (!preg_match('~(^|/)\.|\\\\|\0~', $path)) {                  // no dotfiles, 
         $url = $base . '/' . implode('/', array_map('rawurlencode', explode('/', $p))) . ($isDir ? '/' : '');
         header('Location: ' . $url . ($q === '' ? '' : "?$q"), true, 301);
         exit;
+    }
+    if ($file === null) {                                       // not in this folder: look in its docs/ folder
+        $up = strpos($p, '/') === false ? '' : dirname($p) . '/';
+        $alt = [];
+        if ($p !== '') {
+            $alt[$up . 'docs/' . basename($p) . '.md'] = $up . 'docs/' . basename($p);
+            if (preg_match(TEXT_PAGES, basename($p))) $alt[$up . 'docs/' . basename($p)] = $up . 'docs/' . basename($p);
+        }
+        $in = $p === '' ? '' : $p . '/';
+        $alt += [$in . 'docs/index.md' => $in . 'docs/', $in . 'docs/README.md' => $in . 'docs/'];
+        foreach ($alt as $f => $to) {
+            if (!is_file(__DIR__ . '/' . $f)) continue;
+            $q = $_SERVER['QUERY_STRING'] ?? '';                // redirect, so relative links and images keep working
+            header('Location: ' . $base . '/' . implode('/', array_map('rawurlencode', explode('/', $to))) . ($q === '' ? '' : "?$q"), true, 302);
+            exit;
+        }
     }
 }
 

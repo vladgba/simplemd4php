@@ -8,9 +8,11 @@ DirectoryIndex index.php
     # Hide dotfiles and dot-folders (.git, .cache, .env …), except .well-known
     RewriteRule (^|/)\.(?!well-known(/|$)) - [F,L]
 
-    # Serve real static files (images, css, downloads) directly — but never raw .md
+    # Serve real static files (images, css, downloads) directly — but never raw .md,
+    # and not license files (LICENSE, COPYING, NOTICE …), which index.php shows as pages
     RewriteCond %{REQUEST_FILENAME} -f
     RewriteCond %{REQUEST_FILENAME} !\.md$ [NC]
+    RewriteCond %{REQUEST_FILENAME} !(^|/)(licen[sc]e|copying|unlicense|notice)(-[\w.+]+)?(\.txt)?$ [NC]
     RewriteRule ^ - [L]
 
     # Everything else is a page
